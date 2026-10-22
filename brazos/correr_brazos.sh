@@ -27,7 +27,9 @@ LOGS=$EXP/brazos_v3
 F=$LOGS/semillas_$(hostname -s)
 [ -z "${SEMILLAS:-}" ] && [ -f "$F" ] && SEMILLAS=$(tr '\n' ' ' < "$F")
 SEMILLAS=${SEMILLAS:-"100213 271211 100313 353161 100613 487757 100913 641371 101113 823541"}
-BRAZOS=${BRAZOS:-"E0 E5 E6 E7 E8 E9"}
+# v4: E6-E9 se corrieron con el codigo del PR 8; con este codigo esos .env ya no
+# lo reproducen. Por defecto, la base y los brazos v4 (los terminados se saltean)
+BRAZOS=${BRAZOS:-"E0 E5 E10 E11 E12"}
 REINTENTOS=${REINTENTOS:-1}
 BORRAR_CHECKPOINTS=${BORRAR_CHECKPOINTS:-1}
 

@@ -11,6 +11,8 @@ cátedra, para los dos grupos del experimento colaborativo.
 | Predice | 202109 | 202107 |
 | Testing | Kaggle (sube los cortes 8000 – 12000) | ganancia contra la clase real de 202107 |
 
+> **Resultados finales (grupo B, 2026-10-22):** ver [RESULTADOS.md](RESULTADOS.md): brazos E0–E11, el laboratorio de final train (`lab/`) y cómo reproducir cada número.
+
 ## Qué cambia respecto del z635
 
 Las funciones y celdas de la cátedra están copiadas **sin cambios** en
@@ -56,26 +58,35 @@ quién se reproduce y quién muere.
 
 Cada generación (`GA_MODO=evolutivo`):
 
-1. **Fitness representativo:** un LightGBM con los hiperparámetros de la
-   mejor fila de la BO de `HT_FIJO` (los mismos que el modelo final; sin
-   `HT_FIJO`, uno chico) entrena con **todas** las columnas vivas y da la
-   importancia (gain) de cada una y la ganancia en el mes de validación del
-   fitness (A: 202103, B: 202101; nunca el de la BO ni el testing).
-2. **Reproducción:** nacen `EV_HIJOS × tope` hijos `padre1 op padre2`
-   (`op` en `+ − × /`, con NaN → 0 e Inf → NA en cada operación). Los padres
-   se sortean con probabilidad según su puesto en la importancia (ranking
-   lineal: el primero es `EV_PRESION` veces más probable que el último y
-   nadie tiene probabilidad 0). Los padres pueden ser de **cualquier
-   generación**: una nacida en la 1 se cruza con una de la 5.
-3. **Clon (Highlander):** `EV_CLONES` de los nacimientos son `X + cero` o
-   `X * uno` con `X` una variable original. Las constantes nunca tienen
-   importancia, así que entran por esta regla forzada y no por el sorteo. El
-   clon de una original viva la salva de morir en esa generación; el de una
-   muerta la revive.
-4. **Muerte:** de población + hijos sobreviven `tope` columnas, sorteadas sin
-   reposición con la misma probabilidad por ranking. Por defecto el tope es la
-   cantidad de columnas con la que llega el dataset (~1.100–1.200 en el grupo
-   B): 1.150 → 2.300 con los hijos → 1.150. **La población nunca baja.**
+1. **Importancia:** el LightGBM de canaritos de la cátedra (z635 celda 66,
+   con sus mismos parámetros y early stopping sobre la ganancia meseta)
+   entrena con **todo lo posible**: todas las columnas de la población, todos
+   los meses con clase menos los reservados del grupo y todos los CONTINUA.
+   En el grupo A entrena 201901-202103 y valida 202105 (nunca 202107 ni
+   202109); en el B, 201901-202101 y valida 202103. Usa todos los núcleos de
+   la VM (la cátedra usa 1; cambia la velocidad, no el modelo). Da la
+   importancia (gain) de cada columna. El evolutivo no tiene un LightGBM
+   propio. La ganancia en el mes de validación queda en el registro.
+2. **Reproducción (`X * 1`):** pasa igual a la generación siguiente **toda
+   variable que sirve**: con `EV_PISO_CANARITOS` (default), la que le gana a
+   columnas al azar en el LightGBM de la importancia, con la regla de la
+   cátedra (celda 66); sin piso, la que tiene importancia > 0. Con
+   `EV_ORIGINALES_FIJAS` (default) las originales pasan siempre y solo
+   compiten las fórmulas, por `EV_FORMULAS` lugares. Lo que fue bueno sigue
+   sin cambiar y lo que no sirve no pasa: la importancia decide qué queda. El único resguardo es
+   `EV_MIN_HIJOS` (25 % del tope): si las usadas no entran todas dejándole
+   ese mínimo de lugares a los hijos, pasan las de más importancia. El
+   registro marca las generaciones en que actuó.
+3. **Cruza:** los lugares que quedan hasta el tope son hijos `padre1 op
+   padre2` (`op` en `+ − × /`, con NaN → 0 e Inf → NA en cada operación). Los
+   padres se sortean con probabilidad según su puesto en la importancia
+   (ranking lineal: el primero es `EV_PRESION` veces más probable que el
+   último y nadie tiene probabilidad 0). Los padres pueden ser de **cualquier
+   generación**, y también una variable que no pasa puede ser padre: su
+   información sigue en el hijo.
+4. **Medición:** el LightGBM de la generación siguiente mide a las copias y a
+   los hijos juntos. Por defecto el tope es la cantidad de columnas con la que
+   llega el dataset. **La población nunca baja.**
 
 Al final la población entra al dataset entero (las fórmulas se escriben con
 los nombres de las columnas originales y se recalculan) y las originales
@@ -83,11 +94,24 @@ muertas se borran. Canaritos no corre por defecto con el evolutivo: achica el
 dataset a ~450 columnas, justo lo contrario de lo que se busca (`CN_RUN=1` lo
 prende igual).
 
+**Mes de prueba.** En cada generación el LightGBM de la importancia predice
+también un mes con clase que el evolutivo nunca usa para decidir (A: 202107;
+B: 202105). Su ganancia queda en el registro (`ganancia_meseta_prueba`): dice si
+la población mejora fuera de lo que vio.
+
+**Búsqueda de fórmulas (`EV_SOLO=1`, `EV_CONTROL=1`).** Corre el FE y el
+evolutivo por importancia, después el mismo evolutivo con selección al azar
+sobre el mismo dataset, y termina. Graba `evolutivo_busqueda.txt` con las dos
+curvas en el mes de prueba y las mejores fórmulas, y `evolutivo_mejores.txt`.
+Si la curva por importancia sube y queda por encima de la del azar, la
+corrida completa usa esa población con `EV_POBLACION_DESDE`, sin volver a
+evolucionar.
+
 **Lo que queda registrado:**
 
 | Archivo | Qué |
 |---|---|
-| `evolutivo_generaciones.txt` | una fila por generación: población al inicio, candidatos, población al final, nacidas, clones, revividas, muertas, **originales vivas**, generadas vivas, profundidad máxima y media, fracción de hijos con padres de generaciones distintas, **fórmulas nacidas acumuladas**, % de la importancia que tienen las generadas, ganancia del fitness (meseta y máximo) y segundos |
+| `evolutivo_generaciones.txt` | una fila por generación: población, **sirven** (columna `usadas`: le ganan a las canaritos, o importancia > 0 sin piso), canaritos y su umbral, copias `X * 1` de fórmulas, si actuó el mínimo de hijos, nacidas, las que no pasan, **originales vivas**, generadas vivas, profundidad máxima y media, fracción de hijos con padres de generaciones distintas, **fórmulas nacidas acumuladas**, % de la importancia que tienen las generadas, ganancia en la validation de canaritos (meseta y máximo) y segundos |
 | `evolutivo_nacimientos.txt` | cada hijo y cada clon: fórmula, padres y generación de cada padre |
 | `evolutivo_poblacion.txt` | la población final con su importancia |
 | `checkpoints/evolutivo.rds` | el estado al final de cada generación: si la VM se corta, retoma desde ahí |
@@ -100,18 +124,20 @@ cuántas generadas usa el modelo final y en qué puestos.
 | Variable | Default | Qué hace |
 |---|---|---|
 | `GA_MODO` | `evolutivo` | `evolutivo` o `nada` (sin FE evolutivo, la base) |
-| `EV_SELECCION` | `importancia` | `azar`: padres y sobrevivientes al azar (el control de si la importancia sirve) |
+| `EV_SELECCION` | `importancia` | `azar`: las copias (la misma cantidad) y los padres al azar (el control de si la importancia sirve) |
 | `EV_GENERACIONES` | 10 | |
 | `EV_TOPE` | 0 | tamaño de la población; 0 = las columnas con las que llega el dataset |
-| `EV_HIJOS` | 1 | nacimientos por generación, en veces el tope |
-| `EV_CLONES` | 0.1 | fracción de los nacimientos que son clones |
+| `EV_UNDERSAMPLING` | 1 | fracción de los CONTINUA en el LightGBM de la importancia (1 = todos) |
+| `EV_ORIGINALES_FIJAS` | 1 | las originales pasan siempre y la genética agrega hasta `EV_FORMULAS` fórmulas; 0: compite toda la población por el tope y las fórmulas reemplazan columnas |
+| `EV_FORMULAS` | 500 | lugares para fórmulas, con originales fijas |
+| `EV_PISO_CANARITOS` | 1 | sirve (y pasa `X * 1`) solo lo que le gana a columnas al azar en el LightGBM de la importancia, con la regla de la cátedra (celda 66: puesto < mediana de las canaritos + `CN$desvios` desvíos, `CN$ratio` × columnas de canaritos). 0: sirve con importancia > 0 |
+| `EV_HISTORIA` | 1 | cada fórmula tiene su propia historia (`_lag1`, `_lag2`, `_delta1`, `_delta2`, `_tend6`, como el FE histórico) en cada generación y en el dataset final; su importancia es la suma de las 6 columnas. 0: la fórmula sola |
+| `EV_SOLO` | 0 | 1: corrida de búsqueda. FE + evolutivo, graba la población y las mejores fórmulas y termina (sin BO, modelo final ni Kaggle) |
+| `EV_CONTROL` | 0 | 1 (con `EV_SOLO`): en la misma corrida corre después el evolutivo con selección al azar, para comparar |
+| `EV_POBLACION_DESDE` | | ruta a un `evolutivo_poblacion.txt` de una búsqueda: no evoluciona, mete esa población y sigue con el workflow completo |
+| `EV_MIN_HIJOS` | 0.25 | lugares mínimos para hijos, en fracción del tope (1 = sin copias `X * 1`) |
 | `EV_PRESION` | 10 | cuántas veces más probable es el primero de la importancia que el último |
 | `EV_SEMILLAS_N` | 1 | LightGBM por generación (importancia promediada) |
-| `EV_VALIDA` | A 202103, B 202101 | mes de validación del fitness |
-| `EV_VENTANA` | 3 | meses de entrenamiento del fitness antes del de validación, con 1 de gap (0 = todos desde 201901) |
-| `EV_UNDERSAMPLING` | 0.2 | fracción de CONTINUA en el fitness |
-| `EV_ALFA` | 1 | pesos `alfa^k` por mes en el fitness |
-| `EV_PARAM_BO` | 1 | 0: fitness con el LightGBM chico aunque haya `HT_FIJO` |
 | `EV_BORRAR_MUERTAS` | 1 | 0: las originales muertas quedan en el dataset |
 | `CN_RUN` | 0 con evolutivo, 1 sin | correr canaritos |
 | `FT_ALFA` | 1 | pesos `alfa^k` por mes en el final train (k = meses antes del último); la clase sugirió 0.95 |
@@ -131,7 +157,8 @@ secundaria, porque el máximo es optimista y más ruidoso (ver PR 9).
 
 **Prueba:** `tests/test_evolutivo.R` corre el evolutivo sobre un dataset
 sintético de 20 variables (segundos) y verifica que la población quede en el
-tope, que haya clones, recombinación entre generaciones, el conteo de
+tope, que pasen todas las usadas de la generación anterior (originales y
+fórmulas), que siempre haya lugar para hijos, recombinación entre generaciones, el conteo de
 fórmulas, que se retome desde el checkpoint y que las fórmulas se recalculen
 igual en el dataset entero:
 
@@ -141,7 +168,7 @@ Rscript tests/test_evolutivo.R 635_workflow_senior.R
 
 **¿El evolutivo mejora el modelo final?** Para eso está el
 [experimento de brazos](brazos/README.md): grupo B, 10 semillas pareadas,
-base vs. evolutivo vs. evolutivo con selección al azar vs. sin clones.
+base vs. evolutivo vs. evolutivo con selección al azar vs. sin copias `X * 1`.
 
 ## Puesta en marcha
 

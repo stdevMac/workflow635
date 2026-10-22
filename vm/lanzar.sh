@@ -33,7 +33,7 @@ ENVF=".env.$G"
 [ -f "$ENVF" ] || { echo "falta $ENVF (copiar .env.example y completarlo)"; exit 1; }
 grep -q "^GRUPO=$G\$" "$ENVF" || { echo "$ENVF no dice GRUPO=$G"; exit 1; }
 
-DIR="wf635/$G"
+DIR="$VM_PREFIJO/$G"
 MIG="$VM_PREFIJO-$g"
 
 # --- el grupo ya esta corriendo? -------------------------------------------
